@@ -24,15 +24,24 @@ export default function Register() {
     setTimeout(() => setToast(null), 4000);
   };
 
+  const [aiData, setAiData] = useState({ pricing: null, recommend: null });
+
   const fetchPolicy = async (r) => {
     if (!contracts.insurance) return;
     try {
       const p = await contracts.insurance.regionalPolicies(r);
       let loyaltyDisc = 0;
+      let seasons = 0;
+      let prevClaims = 0;
+      
       try {
         const [disc] = await contracts.insurance.getLoyaltyDiscount(account);
         loyaltyDisc = Number(disc);
+        if (farmerDetails) {
+          seasons = Number(farmerDetails.seasonsCompleted || 0);
+        }
       } catch (e) {}
+      
       setPolicyInfo({
         rainfall: Number(p.rainfallThreshold),
         temperature: Number(p.temperatureThreshold),
@@ -43,11 +52,24 @@ export default function Register() {
         loyaltyDiscount: loyaltyDisc,
       });
 
+      // Fetch AI Dynamic Pricing & Recommendations
+      try {
+        const [priceRes, recRes] = await Promise.all([
+          fetch(`${BACKEND_URL}/api/pricing/${r}?seasonsCompleted=${seasons}&previousClaims=${prevClaims}`),
+          fetch(`${BACKEND_URL}/api/recommend/${r}`)
+        ]);
+        setAiData({ pricing: await priceRes.json(), recommend: await recRes.json() });
+      } catch (e) {
+        setAiData({ pricing: null, recommend: null });
+      }
+
       // Fetch KES rate
       try {
         const rateRes = await fetch(`${BACKEND_URL}/api/rates`);
         const rateData = await rateRes.json();
-        const ethPrice = Number(formatEther(p.premiumAmount));
+        
+        // Use AI dynamic premium if available, else fallback to contract base premium
+        const ethPrice = aiData.pricing?.finalPremium || Number(formatEther(p.premiumAmount));
         setPremiumKES(Math.ceil(ethPrice * rateData.KES_PER_ETH));
       } catch (e) {
         setPremiumKES(null);
@@ -222,17 +244,25 @@ export default function Register() {
                   padding: '1rem',
                   marginBottom: '1.25rem',
                 }}>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--accent-green)', fontWeight: 600, marginBottom: '0.75rem' }}>
-                    POLICY DETAILS
+                  <div style={{ fontSize: '0.8rem', color: 'var(--accent-green)', fontWeight: 600, marginBottom: '0.75rem', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>POLICY DETAILS</span>
+                    {aiData.pricing && aiData.pricing.changePercent !== 0 && (
+                      <span className={`badge ${aiData.pricing.changePercent < 0 ? 'badge-success' : 'badge-warning'}`}>
+                        {aiData.pricing.changePercent < 0 ? '' : '+'}{aiData.pricing.changePercent}% AI Adjustment
+                      </span>
+                    )}
                   </div>
                   <div className="form-row" style={{ gap: '0.75rem' }}>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Premium</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Premium {aiData.pricing ? '(Dynamic)' : ''}</div>
                       <div style={{ fontWeight: 700 }}>
                         {paymentMode === 'mpesa' && premiumKES
                           ? `KES ${premiumKES.toLocaleString()}`
-                          : `${policyInfo.premium} ETH`}
+                          : `${aiData.pricing?.finalPremium || policyInfo.premium} ETH`}
                       </div>
+                      {aiData.pricing && aiData.pricing.changePercent !== 0 && paymentMode === 'wallet' && (
+                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textDecoration: 'line-through' }}>{policyInfo.premium} ETH Base</div>
+                      )}
                     </div>
                     <div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Full Payout</div>
@@ -258,6 +288,16 @@ export default function Register() {
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Partial</div>
                       <div style={{ fontWeight: 700 }}>{policyInfo.partialPayout}%</div>
                     </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* AI Crop Recommendation insight bit */}
+              {aiData.recommend && aiData.recommend.recommendations && aiData.recommend.recommendations.length > 0 && (
+                <div style={{ marginBottom: '1.25rem', padding: '0.75rem', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', borderLeft: '3px solid var(--accent-blue)'}}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--accent-blue)', fontWeight: 700, marginBottom: '0.25rem' }}>🤖 AI FARM INSIGHT</div>
+                  <div style={{ fontSize: '0.85rem' }}>
+                    Top crops for {region} this month: <span style={{ fontWeight: 600 }}>{aiData.recommend.recommendations.map(r => r.crop).join(', ')}</span>.
                   </div>
                 </div>
               )}

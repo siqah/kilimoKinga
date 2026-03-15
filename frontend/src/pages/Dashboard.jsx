@@ -1,4 +1,41 @@
+import { useState, useEffect } from 'react';
 import { useInsuranceData } from '../Web3Provider.jsx';
+
+const BACKEND_URL = 'http://localhost:3001';
+
+function RegionRiskRow({ region }) {
+  const [risk, setRisk] = useState(null);
+
+  useEffect(() => {
+    fetch(`${BACKEND_URL}/api/risk/${region}`)
+      .then(res => res.json())
+      .then(data => setRisk(data))
+      .catch(() => {});
+  }, [region]);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: '0.75rem 0',
+        borderBottom: '1px solid var(--border-glass)',
+      }}
+    >
+      <span style={{ fontWeight: 600 }}>📍 {region}</span>
+      <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        {risk ? (
+          <span className={`badge badge-${risk.level === 'low' ? 'success' : risk.level === 'moderate' ? 'warning' : 'danger'}`}>
+            {risk.score}/100 Risk
+          </span>
+        ) : (
+          <span className="badge badge-success">Active</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function Dashboard() {
   const {
@@ -86,24 +123,15 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Supported Regions */}
+        {/* Supported Regions with AI Risk */}
         <div className="card" id="regions-card">
-          <div className="section-title">🗺️ Supported Regions</div>
+          <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>🗺️ Supported Regions</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>AI Risk Radar</span>
+          </div>
           <div className="weather-grid" style={{ gridTemplateColumns: '1fr' }}>
             {['Laikipia', 'Nakuru', 'Turkana'].map((region) => (
-              <div
-                key={region}
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: '0.75rem 0',
-                  borderBottom: '1px solid var(--border-glass)',
-                }}
-              >
-                <span style={{ fontWeight: 600 }}>📍 {region}</span>
-                <span className="badge badge-success">Active</span>
-              </div>
+              <RegionRiskRow key={region} region={region} />
             ))}
           </div>
         </div>

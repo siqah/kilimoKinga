@@ -1,0 +1,14 @@
+
+> kilimokinga-frontend@1.0.0 dev
+> vite
+
+
+  VITE v5.4.21  ready in 226 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+12:26:40 AM [vite] page reload index.html
+12:27:00 AM [vite] hmr update /src/index.css
+12:27:02 AM [vite] hmr update /src/index.css
+12:27:32 AM [vite] hmr update /src/index.css
+12:27:34 AM [vite] hmr update /src/App.jsx
