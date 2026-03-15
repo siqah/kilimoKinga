@@ -21,11 +21,19 @@ export default function Register() {
     if (!contracts.insurance) return;
     try {
       const p = await contracts.insurance.regionalPolicies(r);
+      let loyaltyDisc = 0;
+      try {
+        const [disc] = await contracts.insurance.getLoyaltyDiscount(account);
+        loyaltyDisc = Number(disc);
+      } catch (e) {}
       setPolicyInfo({
         rainfall: Number(p.rainfallThreshold),
         temperature: Number(p.temperatureThreshold),
+        ndvi: Number(p.ndviThreshold),
         premium: formatEther(p.premiumAmount),
         multiplier: Number(p.payoutMultiplier),
+        partialPayout: Number(p.partialPayoutPercent),
+        loyaltyDiscount: loyaltyDisc,
       });
     } catch (e) {
       setPolicyInfo(null);
@@ -78,7 +86,7 @@ export default function Register() {
           ) : farmerDetails ? (
             <div>
               <div className="badge badge-success" style={{ marginBottom: '1rem' }}>
-                ✅ Already Registered
+                ✅ Registered
               </div>
               <div style={{ marginBottom: '0.75rem' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Region: </span>
@@ -92,12 +100,22 @@ export default function Register() {
                 <span style={{ color: 'var(--text-muted)' }}>Coverage: </span>
                 <strong>{formatEther(farmerDetails.coverageAmount)} ETH</strong>
               </div>
+              <div style={{ marginBottom: '0.75rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Seasons Completed: </span>
+                <strong>{Number(farmerDetails.seasonsCompleted)}</strong>
+              </div>
+              {Number(farmerDetails.loyaltyDiscount) > 0 && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <span style={{ color: 'var(--text-muted)' }}>Loyalty Discount: </span>
+                  <span className="badge badge-info">⭐ {formatEther(farmerDetails.loyaltyDiscount)} ETH saved</span>
+                </div>
+              )}
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Status: </span>
                 {farmerDetails.active ? (
                   <span className="badge badge-success">Active</span>
                 ) : (
-                  <span className="badge badge-warning">Claim Paid</span>
+                  <span className="badge badge-warning">Season Ended – Re-register!</span>
                 )}
               </div>
             </div>
@@ -135,18 +153,31 @@ export default function Register() {
                       <div style={{ fontWeight: 700 }}>{policyInfo.premium} ETH</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Payout</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Full Payout</div>
                       <div style={{ fontWeight: 700 }}>{Number(policyInfo.premium) * policyInfo.multiplier} ETH</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Drought Trigger</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Partial Payout</div>
+                      <div style={{ fontWeight: 700 }}>{policyInfo.partialPayout}% ({(Number(policyInfo.premium) * policyInfo.multiplier * policyInfo.partialPayout / 100).toFixed(4)} ETH)</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Drought</div>
                       <div style={{ fontWeight: 700 }}>&lt; {policyInfo.rainfall} mm</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Heat Trigger</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Heat</div>
                       <div style={{ fontWeight: 700 }}>&gt; {policyInfo.temperature} °C</div>
                     </div>
+                    <div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>NDVI (Crop Health)</div>
+                      <div style={{ fontWeight: 700 }}>&lt; {policyInfo.ndvi / 100}%</div>
+                    </div>
                   </div>
+                  {policyInfo.loyaltyDiscount > 0 && (
+                    <div style={{ marginTop: '0.75rem', padding: '0.5rem', background: 'var(--accent-amber-dim)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--accent-amber)' }}>
+                      ⭐ Loyalty discount: {policyInfo.loyaltyDiscount}% off premium!
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -166,10 +197,10 @@ export default function Register() {
         <div className="card" id="register-info-card">
           <h3 style={{ marginBottom: '1.5rem', fontWeight: 700 }}>How Registration Works</h3>
           {[
-            { num: '01', title: 'Choose Your Region', desc: 'Select the agricultural region where your farm is located. Each region has tailored insurance parameters based on local climate.' },
-            { num: '02', title: 'Pay Your Premium', desc: 'A one-time premium payment activates your coverage. The smart contract holds these funds securely on-chain.' },
-            { num: '03', title: 'Get Auto-Protected', desc: 'Weather oracles continuously monitor your region. If a drought or heatwave is detected, your payout is triggered automatically.' },
-            { num: '04', title: 'Receive Instant Payout', desc: 'No claims to file! Funds are transferred directly to your wallet — transparent, auditable, and instant.' },
+            { num: '01', title: 'Choose Your Region', desc: 'Select the agricultural region where your farm is located. Each region has tailored insurance parameters.' },
+            { num: '02', title: 'Pay Your Premium', desc: 'A seasonal premium activates your coverage. Returning farmers earn loyalty discounts (up to 25% off)!' },
+            { num: '03', title: 'Tiered Protection', desc: 'Moderate events get 50% partial payouts. Severe events get full coverage. NDVI satellite data also detects crop damage.' },
+            { num: '04', title: 'Renew Each Season', desc: 'After a season ends, re-register for the next one. Your loyalty builds — 5% more discount per completed season!' },
           ].map((step) => (
             <div
               key={step.num}

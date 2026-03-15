@@ -61,4 +61,16 @@ contract MockWeatherOracle {
 
         return (data.rainfall, data.temperature, data.timestamp);
     }
+
+    /**
+     * @notice Returns NDVI (vegetation index) for a region
+     * @dev    Used by FarmerInsurance for crop damage claims
+     */
+    function getNDVI(
+        string calldata _region
+    ) external view returns (uint256 ndvi) {
+        WeatherData memory data = regionalWeather[_region];
+        require(data.valid, "No data for region");
+        return data.ndvi;
+    }
 }
