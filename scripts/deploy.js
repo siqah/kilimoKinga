@@ -33,6 +33,18 @@ async function main() {
   await pool.waitForDeployment();
   console.log("  ✅ InsurancePool    deployed to:", pool.target);
 
+  // 5. Deploy MpesaBridge
+  const MpesaBridge = await ethers.getContractFactory("MpesaBridge");
+  const bridge = await MpesaBridge.deploy(insurance.target, deployer.address);
+  await bridge.waitForDeployment();
+  console.log("  ✅ MpesaBridge      deployed to:", bridge.target);
+
+  // Fund MpesaBridge for premium payments
+  await deployer.sendTransaction({
+    to: bridge.target,
+    value: ethers.parseEther("1"),
+  });
+
   // ── Configure enhanced policies ──────────────────────────────────
   const SEASON_90_DAYS = 90 * 24 * 60 * 60;
 
@@ -71,20 +83,15 @@ async function main() {
   console.log("\n  🌦️  Weather data seeded (incl. NDVI) for 3 regions");
 
   console.log("\n═══════════════════════════════════════════════════════════");
-  console.log("  🎉  Deployment Complete! (Enhanced v2)");
+  console.log("  🎉  Deployment Complete! (Enhanced v2 + M-Pesa Bridge)");
   console.log("═══════════════════════════════════════════════════════════");
-  console.log("\n  New Features:");
-  console.log("  ─────────────────────────────────────────────");
-  console.log("  🔄 Multi-season policies (farmers re-register each season)");
-  console.log("  📊 Tiered payouts (50% partial / 100% full based on severity)");
-  console.log("  🛰️  NDVI crop damage claims (satellite vegetation data)");
-  console.log("  ⭐ Loyalty discounts (5%/season after 3 seasons, max 25%)");
   console.log("\n  Contract Addresses:");
   console.log("  ─────────────────────────────────────────────");
   console.log("  MockWeatherOracle:", oracle.target);
   console.log("  FarmerInsurance:  ", insurance.target);
   console.log("  MockUSDC:        ", usdc.target);
   console.log("  InsurancePool:   ", pool.target);
+  console.log("  MpesaBridge:     ", bridge.target);
   console.log("");
 }
 
