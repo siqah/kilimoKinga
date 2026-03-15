@@ -2,6 +2,7 @@ import config, { validateConfig } from './src/config/index.js';
 import { createApp } from './src/app.js';
 import * as blockchainService from './src/services/blockchain.service.js';
 import { startClaimListener } from './src/listeners/claim.listener.js';
+import { startAutoChecker } from './src/services/autochecker.service.js';
 import logger from './src/utils/logger.js';
 
 async function start() {
@@ -21,6 +22,7 @@ async function start() {
   });
 
   startClaimListener();
+  startAutoChecker();
 
   const shutdown = (signal) => {
     logger.info(`${signal} received — shutting down...`);
