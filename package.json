@@ -1,0 +1,26 @@
+{
+  "name": "kilimokinga",
+  "version": "1.0.0",
+  "description": "KilimoKinga: Automated Parametric Crop Insurance KilimoKinga protects Kenyan and African smallholder farmers against climate disasters. By replacing traditional claims with AI-driven weather agents, we guarantee instant, transparent payouts during severe droughts or floods—delivering frictionless financial support when it matters most.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/siqah/kilimoKinga.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/siqah/kilimoKinga/issues"
+  },
+  "homepage": "https://github.com/siqah/kilimoKinga#readme",
+  "devDependencies": {
+    "@chainlink/contracts": "^1.5.0",
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@openzeppelin/contracts": "^5.6.1",
+    "hardhat": "^2.28.6"
+  }
+}
