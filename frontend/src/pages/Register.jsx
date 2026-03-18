@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { parseEther, formatEther } from 'ethers';
-import { useWeb3, useInsuranceData } from '../Web3Provider.jsx';
+import { useStore } from '../store/useStore.js';
 
 const REGIONS = ['Laikipia', 'Nakuru', 'Turkana'];
 const BACKEND_URL = 'http://localhost:3001';
 
 export default function Register() {
-  const { account, contracts } = useWeb3();
-  const { farmerDetails, refresh } = useInsuranceData();
+  const account = useStore(state => state.account);
+  const contracts = useStore(state => state.contracts);
+  const farmerDetails = useStore(state => state.farmerDetails);
+  const refresh = useStore(state => state.refreshInsuranceData);
   const [region, setRegion] = useState(REGIONS[0]);
   const [policyInfo, setPolicyInfo] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -196,8 +198,8 @@ export default function Register() {
             </button>
           </div>
 
-          {/* If wallet mode and already registered */}
-          {paymentMode === 'wallet' && farmerDetails && farmerDetails.active ? (
+          {/* If already registered */}
+          {farmerDetails && farmerDetails.active ? (
             <div>
               <div className="badge badge-success" style={{ marginBottom: '1rem' }}>
                 ✅ Registered

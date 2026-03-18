@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useInsuranceData } from '../Web3Provider.jsx';
+import { useStore } from '../store/useStore.js';
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -38,15 +38,13 @@ function RegionRiskRow({ region }) {
 }
 
 export default function Dashboard() {
-  const {
-    totalPremiums,
-    totalClaims,
-    farmerCount,
-    contractBalance,
-    poolHealth,
-    stakerCount,
-    loading,
-  } = useInsuranceData();
+  const totalPremiums = useStore(state => state.totalPremiums);
+  const totalClaims = useStore(state => state.totalClaims);
+  const farmerCount = useStore(state => state.farmerCount);
+  const contractBalance = useStore(state => state.contractBalance);
+  const poolHealth = useStore(state => state.poolHealth);
+  const stakerCount = useStore(state => state.stakerCount);
+  const loading = useStore(state => state.loading);
 
   const poolUtilization =
     Number(poolHealth.available) > 0

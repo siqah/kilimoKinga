@@ -160,7 +160,7 @@ contract MpesaBridge {
         return walletToPhone[_wallet] != bytes32(0);
     }
 
-    // ── Internal ─────────────────────────────────────────────────────────
+    // ── Internal ───────────────────────────────────────────────────────
     function _isActive(address _wallet) internal view returns (bool) {
         try insurance.farmers(_wallet) returns (
             bool, string memory, uint256, uint256, uint256, bool active, uint256, uint256

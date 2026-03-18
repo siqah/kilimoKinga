@@ -5,22 +5,32 @@ import Register from './pages/Register.jsx';
 import Stake from './pages/Stake.jsx';
 import Admin from './pages/Admin.jsx';
 import Insights from './pages/Insights.jsx';
-
-const TABS = [
-  { id: 'dashboard', label: '📊 Dashboard' },
-  { id: 'register', label: '🌾 Register' },
-  { id: 'insights', label: '🧠 AI Insights' },
-  { id: 'stake', label: '💰 Stake' },
-  { id: 'admin', label: '⚙️ Admin' },
-];
+import { useStore } from './store/useStore.js';
 
 function AppInner() {
-  const { account, connect } = useWeb3();
+  const account = useStore(state => state.account);
+  const connect = useStore(state => state.connectWallet);
+  const farmerDetails = useStore(state => state.farmerDetails);
+  const stakerCount = useStore(state => state.stakerCount);
+  const poolHealth = useStore(state => state.poolHealth);
   const [activeTab, setActiveTab] = useState('dashboard');
 
   const shortAddr = account
     ? `${account.slice(0, 6)}…${account.slice(-4)}`
     : null;
+
+  // Determine user roles
+  const isRegistered = farmerDetails?.active;
+  const hasStaked = Number(poolHealth?.staked || 0) > 0 && account; // Simplification: in reality, check if *this exact user* has staked.
+  
+  // Decide which tabs to show
+  const availableTabs = [
+    { id: 'dashboard', label: '📊 Dashboard' },
+    { id: 'register', label: '🌾 Register' },
+    ...(isRegistered ? [{ id: 'insights', label: '🧠 AI Insights' }] : []),
+    { id: 'stake', label: '💰 Stake' },
+    { id: 'admin', label: '⚙️ Admin' },
+  ];
 
   return (
     <div className="app-wrapper">
@@ -34,7 +44,7 @@ function AppInner() {
           </a>
 
           <div className="navbar-links">
-            {TABS.map((t) => (
+            {availableTabs.map((t) => (
               <a
                 key={t.id}
                 href="#"
@@ -61,9 +71,21 @@ function AppInner() {
         <main className="main-content">
           {activeTab === 'dashboard' && <Dashboard />}
           {activeTab === 'register' && <Register />}
-          {activeTab === 'insights' && <Insights />}
+          {activeTab === 'insights' && isRegistered && <Insights />}
           {activeTab === 'stake' && <Stake />}
           {activeTab === 'admin' && <Admin />}
+          
+          {/* Fallback if somehow on Insights but not registered */}
+          {activeTab === 'insights' && !isRegistered && (
+            <div className="empty-state">
+              <div className="empty-icon">🔒</div>
+              <h2 style={{ marginBottom: '1rem' }}>Premium Insights Locked</h2>
+              <p style={{ marginBottom: '2rem' }}>You must be a registered farmer to access AI weather forecasts and yield predictions.</p>
+              <button className="btn btn-primary" onClick={() => setActiveTab('register')}>
+                Register Now
+              </button>
+            </div>
+          )}
         </main>
       </div>
     </div>

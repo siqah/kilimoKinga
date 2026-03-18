@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { parseEther } from 'ethers';
-import { useWeb3, useInsuranceData } from '../Web3Provider.jsx';
+import { useStore } from '../store/useStore.js';
 
 const REGIONS = ['Laikipia', 'Nakuru', 'Turkana'];
 
 export default function Admin() {
-  const { account, contracts } = useWeb3();
-  const { refresh } = useInsuranceData();
+  const account = useStore(state => state.account);
+  const contracts = useStore(state => state.contracts);
+  const refresh = useStore(state => state.refreshInsuranceData);
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(false);
 

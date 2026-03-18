@@ -15,7 +15,7 @@ async function start() {
 
   const app = createApp();
 
-  const server = app.listen(config.port, '0.0.0.0', () => {
+  const server = app.listen(config.port, '127.0.0.1', () => {
     logger.info(`Server running on http://localhost:${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
     logger.info(`Paystack: ${config.paystack.secretKey ? '✅' : '❌'}`);

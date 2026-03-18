@@ -1,11 +1,16 @@
 import { useState } from 'react';
 import { parseUnits, formatUnits } from 'ethers';
-import { useWeb3, useInsuranceData } from '../Web3Provider.jsx';
+import { useStore } from '../store/useStore.js';
 import { ADDRESSES } from '../contracts.js';
 
 export default function Stake() {
-  const { account, contracts } = useWeb3();
-  const { poolHealth, myStake, myReward, stakerCount, refresh } = useInsuranceData();
+  const account = useStore(state => state.account);
+  const contracts = useStore(state => state.contracts);
+  const poolHealth = useStore(state => state.poolHealth);
+  const myStake = useStore(state => state.myStake);
+  const myReward = useStore(state => state.myReward);
+  const stakerCount = useStore(state => state.stakerCount);
+  const refresh = useStore(state => state.refreshInsuranceData);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
