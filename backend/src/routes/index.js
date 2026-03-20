@@ -48,4 +48,27 @@ router.get('/feedback/recent', aiCtrl.recentFeedback);
 router.get('/rates', mpesaCtrl.getRates);
 router.get('/health', mpesaCtrl.healthCheck);
 
+// History (MongoDB-backed analytics)
+router.get('/history/:region', async (req, res) => {
+  try {
+    const { isDBConnected } = await import('../db/connection.js');
+    if (!isDBConnected()) {
+      return res.json({ success: false, error: 'Database not connected' });
+    }
+    const WeatherEvent = (await import('../db/models/WeatherEvent.model.js')).default;
+    const AIPrediction = (await import('../db/models/AIPrediction.model.js')).default;
+    const { region } = req.params;
+    const limit = parseInt(req.query.limit) || 50;
+
+    const [weather, predictions] = await Promise.all([
+      WeatherEvent.find({ region }).sort({ recordedAt: -1 }).limit(limit).lean(),
+      AIPrediction.find({ region }).sort({ createdAt: -1 }).limit(limit).lean(),
+    ]);
+
+    res.json({ success: true, region, weather, predictions });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 export default router;

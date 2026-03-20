@@ -1,19 +1,39 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+/**
+ * @title IERC20 (minimal interface)
+ */
+interface IERC20 {
+    function totalSupply() external view returns (uint256);
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 value) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function approve(address spender, uint256 value) external returns (bool);
+    function transferFrom(address from, address to, uint256 value) external returns (bool);
+}
 
 /**
- * @title InsurancePool
+ * @title InsurancePool (v2 — Gas Optimized + Upgradeable-Ready)
  * @notice Investor-backed liquidity pool for the insurance system.
- *         Investors stake stablecoins, earn APY, and their capital
- *         backs farmer claim payouts.
+ *         Uses custom errors for gas savings and safe transfer patterns.
+ *
+ * @dev To upgrade to UUPS Proxy:
+ *      1. npm install @openzeppelin/contracts-upgradeable
+ *      2. Inherit Initializable, UUPSUpgradeable, OwnableUpgradeable
+ *      3. Replace constructor with initialize() + initializer modifier
+ *      4. Import and use SafeERC20 from OZ instead of inline _safeTransfer
  */
 contract InsurancePool {
-    IERC20 public stablecoin;
-    address public insuranceContract;
-    address public admin;
+    // ── Custom Errors ────────────────────────────────────────────────────
+    error AmountMustBePositive();
+    error NoActiveStake();
+    error OnlyInsuranceContract();
+    error OnlyAdmin();
+    error InsufficientPoolLiquidity(uint256 available, uint256 required);
+    error TransferFailed();
 
+    // ── Structs ──────────────────────────────────────────────────────────
     struct Stake {
         uint256 amount;
         uint256 startTime;
@@ -21,11 +41,16 @@ contract InsurancePool {
         bool active;
     }
 
+    // ── State ────────────────────────────────────────────────────────────
+    IERC20 public stablecoin;
+    address public insuranceContract;
+    address public admin;
+
     mapping(address => Stake) public stakers;
     address[] public stakerAddresses;
 
     uint256 public totalStaked;
-    uint256 public rewardRate = 5; // 5% annual return
+    uint256 public rewardRate;
     uint256 public totalClaimsPaid;
 
     // ── Events ───────────────────────────────────────────────────────────
@@ -38,18 +63,27 @@ contract InsurancePool {
         stablecoin = IERC20(_stablecoin);
         insuranceContract = _insuranceContract;
         admin = msg.sender;
+        rewardRate = 5; // 5% APY
+    }
+
+    // ── Internal: Safe ERC20 transfer ────────────────────────────────────
+    function _safeTransfer(IERC20 token, address to, uint256 amount) internal {
+        bool success = token.transfer(to, amount);
+        if (!success) revert TransferFailed();
+    }
+
+    function _safeTransferFrom(IERC20 token, address from, address to, uint256 amount) internal {
+        bool success = token.transferFrom(from, to, amount);
+        if (!success) revert TransferFailed();
     }
 
     // ── Investor: Stake stablecoins ──────────────────────────────────────
     function stake(uint256 _amount) external {
-        require(_amount > 0, "Amount must be positive");
-        require(
-            stablecoin.transferFrom(msg.sender, address(this), _amount),
-            "Transfer failed"
-        );
+        if (_amount == 0) revert AmountMustBePositive();
+
+        _safeTransferFrom(stablecoin, msg.sender, address(this), _amount);
 
         if (stakers[msg.sender].active) {
-            // Compound existing rewards into the stake
             uint256 pendingReward = calculateReward(msg.sender);
             stakers[msg.sender].amount += _amount + pendingReward;
             stakers[msg.sender].startTime = block.timestamp;
@@ -69,13 +103,12 @@ contract InsurancePool {
 
     // ── Insurance contract: withdraw to pay a claim ──────────────────────
     function payClaim(address _farmer, uint256 _amount) external {
-        require(msg.sender == insuranceContract, "Only insurance contract");
-        require(
-            stablecoin.balanceOf(address(this)) >= _amount,
-            "Insufficient pool liquidity"
-        );
+        if (msg.sender != insuranceContract) revert OnlyInsuranceContract();
 
-        require(stablecoin.transfer(_farmer, _amount), "Transfer failed");
+        uint256 balance = stablecoin.balanceOf(address(this));
+        if (balance < _amount) revert InsufficientPoolLiquidity(balance, _amount);
+
+        _safeTransfer(stablecoin, _farmer, _amount);
         totalClaimsPaid += _amount;
 
         emit ClaimFundsUsed(_amount, stablecoin.balanceOf(address(this)));
@@ -83,26 +116,23 @@ contract InsurancePool {
 
     // ── Investor: Unstake with accrued rewards ───────────────────────────
     function unstake() external {
-        require(stakers[msg.sender].active, "No active stake");
+        if (!stakers[msg.sender].active) revert NoActiveStake();
 
         Stake storage userStake = stakers[msg.sender];
         uint256 reward = calculateReward(msg.sender);
         uint256 totalReturn = userStake.amount + reward;
 
-        // Check pool has enough
-        require(
-            stablecoin.balanceOf(address(this)) >= totalReturn,
-            "Insufficient pool liquidity for withdrawal"
-        );
+        uint256 balance = stablecoin.balanceOf(address(this));
+        if (balance < totalReturn) revert InsufficientPoolLiquidity(balance, totalReturn);
 
         userStake.active = false;
         totalStaked -= userStake.amount;
 
-        require(stablecoin.transfer(msg.sender, totalReturn), "Transfer failed");
+        _safeTransfer(stablecoin, msg.sender, totalReturn);
         emit Unstaked(msg.sender, userStake.amount, reward);
     }
 
-    // ── Internal: reward calculation (simple annual %) ───────────────────
+    // ── Reward calculation ───────────────────────────────────────────────
     function calculateReward(address _staker) public view returns (uint256) {
         Stake storage userStake = stakers[_staker];
         if (!userStake.active) return 0;

@@ -8,9 +8,12 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@openzeppelin/contracts-upgradeable": "^5.6.1",
+    "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "ethers": "^6.13.0",
-    "express": "^4.21.0"
+    "express": "^4.21.0",
+    "mongoose": "^9.3.1"
   }
 }

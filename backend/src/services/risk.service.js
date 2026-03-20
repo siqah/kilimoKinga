@@ -1,4 +1,7 @@
 import logger from '../utils/logger.js';
+import { isDBConnected } from '../db/connection.js';
+import WeatherEvent from '../db/models/WeatherEvent.model.js';
+import AIPrediction from '../db/models/AIPrediction.model.js';
 
 // Historical data store (production: replace with a real database)
 const weatherHistory = new Map();
@@ -19,6 +22,11 @@ export function recordWeatherData(region, { rainfall, temperature, ndvi }) {
 
   if (history.length > MAX_HISTORY) {
     history.shift();
+  }
+
+  // Persist to MongoDB if available
+  if (isDBConnected()) {
+    WeatherEvent.create({ region, rainfall, temperature, ndvi, source: 'api' }).catch(() => {});
   }
 }
 
@@ -93,7 +101,7 @@ export function calculateRiskScore(region, policy) {
 
   logger.info(`Risk score for ${region}: ${compositeScore}/100 (${level})`);
 
-  return {
+  const result = {
     score: compositeScore,
     level,
     confidence: history.length >= 15 ? 'high' : history.length >= 7 ? 'medium' : 'low',
@@ -108,6 +116,13 @@ export function calculateRiskScore(region, policy) {
     dataPoints: history.length,
     lastUpdated: new Date(history[history.length - 1].timestamp).toISOString(),
   };
+
+  // Persist prediction to MongoDB
+  if (isDBConnected()) {
+    AIPrediction.create({ region, type: 'risk', result, confidence: compositeScore }).catch(() => {});
+  }
+
+  return result;
 }
 
 export function getWeatherHistory(region) {

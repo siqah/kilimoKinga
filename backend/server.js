@@ -3,14 +3,16 @@ import { createApp } from './src/app.js';
 import * as blockchainService from './src/services/blockchain.service.js';
 import { startClaimListener } from './src/listeners/claim.listener.js';
 import { startAutoChecker } from './src/services/autochecker.service.js';
+import { connectDB } from './src/db/connection.js';
 import logger from './src/utils/logger.js';
 
 async function start() {
   logger.info('═══════════════════════════════════════════════════════════');
-  logger.info('  🌾  KilimoKinga Backend v2.0');
+  logger.info('  🌾  KilimoKinga Backend v3.0');
   logger.info('═══════════════════════════════════════════════════════════');
 
   validateConfig();
+  await connectDB();
   blockchainService.init();
 
   const app = createApp();

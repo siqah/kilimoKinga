@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 /**
  * @title IWeatherOracle
- * @notice Interface for weather data oracle (now includes NDVI)
+ * @notice Interface for weather data oracle (includes NDVI)
  */
 interface IWeatherOracle {
     function getWeatherData(
@@ -16,42 +16,61 @@ interface IWeatherOracle {
 }
 
 /**
- * @title FarmerInsurance (Enhanced v2)
+ * @title FarmerInsurance (v3 — Gas Optimized + Upgradeable-Ready)
  * @notice Decentralized parametric crop insurance with:
- *         1) Multi-season policies (farmers can re-register each season)
- *         2) Tiered payouts (full, partial, none based on severity)
- *         3) NDVI-based claims (satellite vegetation data)
- *         4) Loyalty discounts (long-term farmers pay less)
+ *         1) Custom errors for gas savings
+ *         2) Struct packing for storage efficiency
+ *         3) Swappable oracle address
+ *         4) Multi-season policies with loyalty discounts
+ *         5) Tiered payouts (full, partial, none)
+ *         6) NDVI-based claims (satellite vegetation data)
+ *
+ * @dev To upgrade to UUPS Proxy:
+ *      1. npm install @openzeppelin/contracts-upgradeable
+ *      2. Inherit Initializable, UUPSUpgradeable, OwnableUpgradeable
+ *      3. Replace constructor with initialize() + initializer modifier
+ *      4. Add _authorizeUpgrade override
  */
 contract FarmerInsurance {
-    // ── Structs ──────────────────────────────────────────────────────────
+    // ── Custom Errors ────────────────────────────────────────────────────
+    error OnlyAdmin();
+    error AlreadyActive();
+    error NotActive();
+    error NotRegistered();
+    error ClaimAlreadyPaid();
+    error RegionNotSupported();
+    error InsufficientPremium(uint256 sent, uint256 required);
+    error InsufficientFunds(uint256 available, uint256 required);
+    error SeasonNotEnded(uint256 endsAt);
+    error ZeroAddress();
+
+    // ── Structs (packed for storage efficiency) ──────────────────────────
     struct Farmer {
-        bool isRegistered;
-        string region;
         uint256 premiumPaid;
         uint256 coverageAmount;
         uint256 claimPaid;
+        uint256 seasonsCompleted;
+        uint256 seasonStart;
+        string region;
+        bool isRegistered;
         bool active;
-        uint256 seasonsCompleted;  // loyalty tracker
-        uint256 seasonStart;      // when current season started
     }
 
     struct Policy {
-        uint256 rainfallThreshold;       // mm – below this triggers drought
-        uint256 temperatureThreshold;    // °C – above this triggers heat
-        uint256 ndviThreshold;           // NDVI (0-10000) – below triggers crop damage
-        uint256 payoutMultiplier;        // e.g. 2 = 2× the premium (full payout)
-        uint256 premiumAmount;           // wei
-        uint256 seasonDuration;          // seconds – how long a season lasts
-        // Tiered payout thresholds (percentage of how far past threshold)
-        uint256 partialPayoutPercent;    // e.g. 50 = 50% payout for moderate events
-        uint256 severeThresholdPercent;  // e.g. 30 = 30% below/above threshold = severe (full payout)
+        uint256 rainfallThreshold;
+        uint256 temperatureThreshold;
+        uint256 ndviThreshold;
+        uint256 payoutMultiplier;
+        uint256 premiumAmount;
+        uint256 seasonDuration;
+        uint256 partialPayoutPercent;
+        uint256 severeThresholdPercent;
     }
 
     // ── Constants ────────────────────────────────────────────────────────
-    uint256 public constant LOYALTY_DISCOUNT_PER_SEASON = 5;  // 5% discount per completed season
-    uint256 public constant MAX_LOYALTY_DISCOUNT = 25;         // max 25% discount
-    uint256 public constant LOYALTY_BONUS_SEASONS = 3;         // bonus starts after 3 seasons
+    uint256 public constant LOYALTY_DISCOUNT_PER_SEASON = 5;
+    uint256 public constant MAX_LOYALTY_DISCOUNT = 25;
+    uint256 public constant LOYALTY_BONUS_SEASONS = 3;
 
     // ── State ────────────────────────────────────────────────────────────
     address public admin;
@@ -64,8 +83,6 @@ contract FarmerInsurance {
     mapping(address => Farmer) public farmers;
     mapping(string => Policy) public regionalPolicies;
     address[] public farmerAddresses;
-
-    // Track unique farmers (for farmerCount – don't double count re-registrations)
     mapping(address => bool) public isKnownFarmer;
 
     // ── Events ───────────────────────────────────────────────────────────
@@ -74,18 +91,28 @@ contract FarmerInsurance {
     event PolicyUpdated(string region, uint256 rainfallThreshold, uint256 temperatureThreshold, uint256 ndviThreshold);
     event SeasonRenewed(address indexed farmer, uint256 season, uint256 discountApplied);
     event NewSeasonStarted(uint256 season);
+    event OracleUpdated(address indexed oldOracle, address indexed newOracle);
 
     // ── Modifiers ────────────────────────────────────────────────────────
     modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin");
+        if (msg.sender != admin) revert OnlyAdmin();
         _;
     }
 
     // ── Constructor ──────────────────────────────────────────────────────
     constructor(address _oracle) {
+        if (_oracle == address(0)) revert ZeroAddress();
         admin = msg.sender;
         oracle = IWeatherOracle(_oracle);
         currentSeason = 1;
+    }
+
+    // ── Admin: Swap oracle address ───────────────────────────────────────
+    function setOracle(address _newOracle) external onlyAdmin {
+        if (_newOracle == address(0)) revert ZeroAddress();
+        address old = address(oracle);
+        oracle = IWeatherOracle(_newOracle);
+        emit OracleUpdated(old, _newOracle);
     }
 
     // ── Admin: Configure regional policy ─────────────────────────────────
@@ -117,18 +144,15 @@ contract FarmerInsurance {
     // ── Farmer: Register for a season ────────────────────────────────────
     function register(string calldata _region) external payable {
         Policy memory policy = regionalPolicies[_region];
-        require(policy.premiumAmount > 0, "Region not supported");
+        if (policy.premiumAmount == 0) revert RegionNotSupported();
 
         Farmer storage farmer = farmers[msg.sender];
+        if (farmer.active) revert AlreadyActive();
 
-        // If already registered AND still active, reject
-        require(!farmer.active, "Already active this season");
-
-        // Calculate premium with loyalty discount
         uint256 actualPremium = _calculatePremiumWithDiscount(policy.premiumAmount, farmer.seasonsCompleted);
-        require(msg.value >= actualPremium, "Insufficient premium");
+        if (msg.value < actualPremium) revert InsufficientPremium(msg.value, actualPremium);
 
-        // Refund any excess
+        // Refund excess
         if (msg.value > actualPremium) {
             payable(msg.sender).transfer(msg.value - actualPremium);
         }
@@ -137,16 +161,14 @@ contract FarmerInsurance {
             ? policy.premiumAmount - actualPremium
             : 0;
 
-        // Set up the farmer for this season
         farmer.isRegistered = true;
         farmer.region = _region;
         farmer.premiumPaid = actualPremium;
-        farmer.coverageAmount = policy.premiumAmount * policy.payoutMultiplier; // coverage based on full premium
+        farmer.coverageAmount = policy.premiumAmount * policy.payoutMultiplier;
         farmer.claimPaid = 0;
         farmer.active = true;
         farmer.seasonStart = block.timestamp;
 
-        // Track new farmers
         if (!isKnownFarmer[msg.sender]) {
             isKnownFarmer[msg.sender] = true;
             farmerAddresses.push(msg.sender);
@@ -161,29 +183,25 @@ contract FarmerInsurance {
         }
     }
 
-    // ── Admin: Check weather and auto-pay claim (with tiers + NDVI) ──────
+    // ── Admin: Check weather and auto-pay claim ──────────────────────────
     function checkAndPayClaim(address _farmer) external onlyAdmin {
         Farmer storage farmer = farmers[_farmer];
-        require(farmer.isRegistered, "Farmer not registered");
-        require(farmer.active, "Farmer not active");
-        require(farmer.claimPaid == 0, "Claim already paid");
+        if (!farmer.isRegistered) revert NotRegistered();
+        if (!farmer.active) revert NotActive();
+        if (farmer.claimPaid != 0) revert ClaimAlreadyPaid();
 
         Policy memory policy = regionalPolicies[farmer.region];
 
-        // Query oracle for the farmer's region
         (uint256 rainfall, uint256 temperature, ) = oracle.getWeatherData(farmer.region);
         uint256 ndvi = 0;
         try oracle.getNDVI(farmer.region) returns (uint256 _ndvi) {
             ndvi = _ndvi;
-        } catch {
-            // NDVI not available, skip that check
-        }
+        } catch {}
 
-        // Determine severity: 0 = none, 1 = moderate (partial), 2 = severe (full)
         uint256 severity = 0;
         string memory reason;
 
-        // Check drought
+        // Drought check
         if (rainfall < policy.rainfallThreshold) {
             uint256 deficit = ((policy.rainfallThreshold - rainfall) * 100) / policy.rainfallThreshold;
             if (deficit >= policy.severeThresholdPercent) {
@@ -195,7 +213,7 @@ contract FarmerInsurance {
             }
         }
 
-        // Check extreme heat (upgrade severity if worse)
+        // Heat check
         if (temperature > policy.temperatureThreshold) {
             uint256 excess = ((temperature - policy.temperatureThreshold) * 100) / policy.temperatureThreshold;
             uint256 heatSeverity = excess >= policy.severeThresholdPercent ? 2 : 1;
@@ -205,7 +223,7 @@ contract FarmerInsurance {
             }
         }
 
-        // Check NDVI (crop health from satellite)
+        // NDVI check
         if (policy.ndviThreshold > 0 && ndvi > 0 && ndvi < policy.ndviThreshold) {
             uint256 ndviDeficit = ((policy.ndviThreshold - ndvi) * 100) / policy.ndviThreshold;
             uint256 ndviSeverity = ndviDeficit >= policy.severeThresholdPercent ? 2 : 1;
@@ -215,22 +233,19 @@ contract FarmerInsurance {
             }
         }
 
-        // Calculate payout based on severity tier
         if (severity > 0) {
             uint256 claimAmount;
             if (severity == 2) {
-                // Full payout
                 claimAmount = farmer.coverageAmount;
             } else {
-                // Partial payout
                 claimAmount = (farmer.coverageAmount * policy.partialPayoutPercent) / 100;
             }
 
-            require(address(this).balance >= claimAmount, "Insufficient funds");
+            if (address(this).balance < claimAmount) revert InsufficientFunds(address(this).balance, claimAmount);
 
             farmer.claimPaid = claimAmount;
             farmer.active = false;
-            farmer.seasonsCompleted++; // still earns loyalty even if claimed
+            farmer.seasonsCompleted++;
             totalClaims += claimAmount;
 
             payable(_farmer).transfer(claimAmount);
@@ -238,16 +253,15 @@ contract FarmerInsurance {
         }
     }
 
-    // ── Farmer: End season (no claim, earn loyalty) ──────────────────────
+    // ── Farmer: End season ───────────────────────────────────────────────
     function endSeason() external {
         Farmer storage farmer = farmers[msg.sender];
-        require(farmer.active, "Not active");
+        if (!farmer.active) revert NotActive();
 
         Policy memory policy = regionalPolicies[farmer.region];
-        require(
-            block.timestamp >= farmer.seasonStart + policy.seasonDuration,
-            "Season not ended yet"
-        );
+        if (block.timestamp < farmer.seasonStart + policy.seasonDuration) {
+            revert SeasonNotEnded(farmer.seasonStart + policy.seasonDuration);
+        }
 
         farmer.active = false;
         farmer.seasonsCompleted++;
@@ -259,13 +273,13 @@ contract FarmerInsurance {
         emit NewSeasonStarted(currentSeason);
     }
 
-    // ── Internal: Calculate premium with loyalty discount ────────────────
+    // ── Internal ─────────────────────────────────────────────────────────
     function _calculatePremiumWithDiscount(
         uint256 _basePremium,
         uint256 _seasonsCompleted
     ) internal pure returns (uint256) {
         if (_seasonsCompleted < LOYALTY_BONUS_SEASONS) {
-            return _basePremium; // no discount yet
+            return _basePremium;
         }
 
         uint256 discountSeasons = _seasonsCompleted - LOYALTY_BONUS_SEASONS + 1;
@@ -327,6 +341,5 @@ contract FarmerInsurance {
         return farmerCount;
     }
 
-    // Allow contract to receive funds (extra capital injection)
     receive() external payable {}
 }
