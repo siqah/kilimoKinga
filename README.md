@@ -3,20 +3,13 @@
   <p align="center">
     <strong>Decentralized Parametric Crop Insurance for African Smallholder Farmers</strong>
   </p>
-  <p align="center">
-    <a href="https://github.com/siqah/kilimoKinga/issues"><img src="https://img.shields.io/github/issues/siqah/kilimoKinga" alt="Issues" /></a>
-    <a href="https://github.com/siqah/kilimoKinga"><img src="https://img.shields.io/github/stars/siqah/kilimoKinga?style=social" alt="Stars" /></a>
-    <img src="https://img.shields.io/badge/Solidity-^0.8.24-363636?logo=solidity" alt="Solidity" />
-    <img src="https://img.shields.io/badge/React-18-61DAFB?logo=react" alt="React" />
-    <img src="https://img.shields.io/badge/License-ISC-blue" alt="License" />
-  </p>
 </p>
 
 ---
 
-## 📌 Overview
+##  Overview
 
-**KilimoKinga** (Swahili for *"Farming King"*) is a blockchain-powered parametric crop insurance platform purpose-built for Kenyan and African smallholder farmers. It replaces the slow, opaque traditional claims process with **AI-driven weather agents** that trigger instant, transparent payouts the moment climate thresholds are breached—drought, flooding, or extreme heat.
+**KilimoKinga** (Swahili for *"Farming Protector"*) is a blockchain-powered parametric crop insurance platform purpose-built for Kenyan and African smallholder farmers. It replaces the slow, opaque traditional claims process with **AI-driven weather agents** that trigger instant, transparent payouts the moment climate thresholds are breached—drought, flooding, or extreme heat.
 
 > *Over 80% of African farming is rain-fed. A single bad season can wipe out a family's livelihood. KilimoKinga ensures that when disaster strikes, financial support arrives automatically—no paperwork, no delays.*
 
@@ -63,87 +56,6 @@
 
 ---
 
-## ✨ Key Features
-
-### 🔗 Smart Contracts
-
-- **FarmerInsurance** — Core parametric engine with multi-season policies, tiered payouts (full & partial), NDVI satellite vegetation checks, and loyalty discounts (up to 25% off premiums)
-- **WeatherOracle** — Chainlink-ready oracle with request/fulfill pattern, admin fallback for manual data injection, and staleness guards (7-day max age)
-- **MpesaBridge** — Bridges M-Pesa (via Paystack STK Push) to on-chain registration; maps phone hashes to wallets so payouts route back to mobile money
-- **InsurancePool** — Stablecoin-backed liquidity pool where investors stake and earn 5% APY; funds are used to cover farmer claim payouts
-- **Gas Optimized** — Custom errors, packed structs, and efficient storage patterns throughout
-
-### 🖥️ Frontend (React 18 + Vite)
-
-- **Dashboard** — Real-time view of a farmer's policy, coverage, claim status, and loyalty tier
-- **Register** — Region selection, premium calculation with discount preview, and on-chain registration
-- **Stake** — Investor interface to stake stablecoins into the insurance pool and track rewards
-- **Admin Panel** — Policy configuration, oracle management, season control, and claim triggers
-- **Insights** — Analytics and risk metrics across regions
-
-### ⚙️ Backend (Express + MongoDB)
-
-- RESTful API bridging the frontend to blockchain
-- M-Pesa/Paystack STK Push integration for mobile money premium collection
-- On-chain event listeners for real-time claim and registration monitoring
-- MongoDB for persistent storage, analytics, and fast data retrieval
-
----
-
-## 📂 Project Structure
-
-```
-kilimoKinga/
-├── contracts/                  # Solidity smart contracts
-│   ├── FarmerInsurance.sol     # Core parametric insurance engine
-│   ├── WeatherOracle.sol       # Chainlink-ready weather data oracle
-│   ├── MpesaBridge.sol         # M-Pesa ↔ blockchain bridge
-│   ├── InsurancePool.sol       # Investor-backed liquidity pool
-│   ├── MockUSDC.sol            # Test stablecoin for development
-│   └── MockWeatherOracle.sol   # Mock oracle for testing
-├── scripts/
-│   ├── deploy.js               # Standard deployment script
-│   └── deploy-proxy.js         # UUPS proxy deployment (upgradeable)
-├── test/                       # Hardhat test suite
-├── backend/
-│   ├── server.js               # Express entry point
-│   ├── prisma/                 # Database schema
-│   └── src/
-│       ├── routes/             # API routes
-│       ├── services/           # Business logic (risk, registration)
-│       ├── controllers/        # Request handlers
-│       ├── listeners/          # Blockchain event listeners
-│       ├── db/                 # Database connection
-│       ├── middleware/         # Express middleware
-│       └── utils/              # Helpers & utilities
-├── frontend/
-│   ├── index.html              # Entry point
-│   ├── vite.config.js          # Vite configuration
-│   └── src/
-│       ├── App.jsx             # Root component & routing
-│       ├── Web3Provider.jsx    # Wallet connection context
-│       ├── contracts.js        # ABI & contract addresses
-│       ├── index.css           # Design system
-│       └── pages/
-│           ├── Dashboard.jsx   # Farmer dashboard
-│           ├── Register.jsx    # Policy registration
-│           ├── Stake.jsx       # Investor staking
-│           ├── Admin.jsx       # Admin panel
-│           └── Insights.jsx    # Analytics & risk metrics
-├── hardhat.config.js           # Hardhat configuration
-└── package.json                # Root dependencies
-```
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Node.js** ≥ 18
-- **npm** or **yarn**
-- **MetaMask** or any Web3-compatible wallet
-- **MongoDB** instance (local or Atlas)
 
 ### 1. Clone the Repository
 
@@ -295,7 +207,7 @@ This project is licensed under the **ISC License**. See the [LICENSE](LICENSE) f
 
 ---
 
-## 📬 Contact
+## Contact
 
 - **GitHub**: [github.com/siqah/kilimoKinga](https://github.com/siqah/kilimoKinga)
 - **Issues**: [github.com/siqah/kilimoKinga/issues](https://github.com/siqah/kilimoKinga/issues)
@@ -303,6 +215,6 @@ This project is licensed under the **ISC License**. See the [LICENSE](LICENSE) f
 ---
 
 <p align="center">
-  <strong>Built with ❤️ for African farmers</strong><br/>
+  <strong>Built  for African farmers</strong><br/>
   <em>Protecting livelihoods, one season at a time.</em>
 </p>
