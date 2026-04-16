@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore.js';
+import axios from 'axios';  
 
 const BACKEND_URL = 'http://localhost:3001';
 
@@ -7,9 +8,8 @@ function RegionRiskRow({ region }) {
   const [risk, setRisk] = useState(null);
 
   useEffect(() => {
-    fetch(`${BACKEND_URL}/api/risk/${region}`)
-      .then(res => res.json())
-      .then(data => setRisk(data))
+    axios.get(`${BACKEND_URL}/api/risk/${region}`)
+      .then(res => setRisk(res.data))
       .catch(() => {});
   }, [region]);
 
@@ -53,7 +53,6 @@ export default function Dashboard() {
 
   return (
     <>
-      {/* ── Hero ──────────────────────────────────────────────── */}
       <section className="hero" id="dashboard-hero">
         <div className="hero-badge">🛡️ Parametric Insurance</div>
         <h2>Protecting Farmers,<br />Powered by Blockchain</h2>
@@ -64,7 +63,6 @@ export default function Dashboard() {
         </p>
       </section>
 
-      {/* ── Stats ─────────────────────────────────────────────── */}
       <div className="stats-grid" id="stats-grid">
         <div className="stat-card">
           <div className="stat-icon green">🌾</div>
@@ -92,7 +90,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Pool + Regions ────────────────────────────────────── */}
       <div className="two-col">
         {/* Pool Health */}
         <div className="card" id="pool-health-card">

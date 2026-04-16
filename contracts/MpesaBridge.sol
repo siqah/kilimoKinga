@@ -2,21 +2,21 @@
 pragma solidity ^0.8.24;
 
 import "./FarmerInsurance.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title MpesaBridge
  * @notice Allows a backend relay to register farmers who pay via M-Pesa (Paystack).
  *         Maps phone numbers to on-chain identities so payouts can be routed
  *         back to M-Pesa via the backend.
- *
- * Flow:
- *   1. Farmer pays premium via M-Pesa (Paystack STK push)
- *   2. Backend receives webhook confirmation
- *   3. Backend calls registerFarmerViaMpesa() on this contract
- *   4. This contract calls FarmerInsurance.register() on behalf of the farmer
- *   5. On claim payout, backend watches ClaimPaid events and sends M-Pesa via Paystack Transfer
  */
-contract MpesaBridge {
+contract MpesaBridge is Initializable, UUPSUpgradeable, OwnableUpgradeable {
+    using SafeERC20 for IERC20;
+
     // ── Structs ──────────────────────────────────────────────────────────
     struct MpesaFarmer {
         string phoneHash;       // keccak hash of phone number (privacy)
@@ -27,9 +27,9 @@ contract MpesaBridge {
     }
 
     // ── State ────────────────────────────────────────────────────────────
-    address public admin;
     address public relayAddress;       // backend wallet that calls registration
     FarmerInsurance public insurance;
+    IERC20 public stablecoin;
 
     mapping(bytes32 => MpesaFarmer) public mpesaFarmers;  // phoneHash => farmer
     mapping(address => bytes32) public walletToPhone;      // wallet => phoneHash
@@ -55,49 +55,49 @@ contract MpesaBridge {
     );
 
     // ── Modifiers ────────────────────────────────────────────────────────
-    modifier onlyAdmin() {
-        require(msg.sender == admin, "Only admin");
-        _;
-    }
-
     modifier onlyRelay() {
-        require(msg.sender == relayAddress || msg.sender == admin, "Only relay");
+        require(msg.sender == relayAddress || msg.sender == owner(), "Only relay");
         _;
     }
 
-    // ── Constructor ──────────────────────────────────────────────────────
-    constructor(address _insurance, address _relay) {
-        admin = msg.sender;
+    // ── Upgrades Setup ───────────────────────────────────────────────────
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _insurance, address _relay, address _stablecoin) public initializer {
+        __Ownable_init(msg.sender);
+
         insurance = FarmerInsurance(payable(_insurance));
         relayAddress = _relay;
+        stablecoin = IERC20(_stablecoin);
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /**
      * @notice Register a farmer who paid via M-Pesa
-     * @param _phoneHash   keccak256 of the phone number (e.g., keccak256("254712345678"))
-     * @param _walletAddress  Backend-managed wallet for this farmer
-     * @param _region      Insurance region
-     * @param _premiumKES  Amount paid in KES (for record-keeping)
-     * @dev   Relay must send enough ETH to cover the insurance premium
      */
     function registerFarmerViaMpesa(
         bytes32 _phoneHash,
         address _walletAddress,
         string calldata _region,
         uint256 _premiumKES
-    ) external payable onlyRelay {
+    ) external onlyRelay {
         require(!mpesaFarmers[_phoneHash].registered || !_isActive(_walletAddress), "Already active");
 
-        // Get the premium amount from the insurance policy
         (,,,,uint256 premiumAmount,,,) = insurance.regionalPolicies(_region);
         require(premiumAmount > 0, "Region not supported");
-        require(msg.value >= premiumAmount, "Insufficient ETH for premium");
 
-        // Register on the insurance contract using the farmer's managed wallet
-        // We need to call register as if from the wallet — but since we can't,
-        // we send premium to insurance contract directly and track mapping
-        (bool success,) = address(insurance).call{value: premiumAmount}("");
-        require(success, "Premium transfer failed");
+        // The bridge needs allowance from the relay first to pull the stablecoin
+        stablecoin.safeTransferFrom(msg.sender, address(this), premiumAmount);
+        
+        // Then approve FarmerInsurance to pull the stablecoin from the bridge
+        stablecoin.approve(address(insurance), premiumAmount);
+
+        // Register on behalf of the farmer's allocated wallet address
+        insurance.registerFor(_walletAddress, _region);
 
         // Store M-Pesa mapping
         mpesaFarmers[_phoneHash] = MpesaFarmer({
@@ -117,17 +117,11 @@ contract MpesaBridge {
 
         totalKESCollected += _premiumKES;
 
-        // Refund excess
-        if (msg.value > premiumAmount) {
-            payable(msg.sender).transfer(msg.value - premiumAmount);
-        }
-
         emit MpesaFarmerRegistered(_phoneHash, _walletAddress, _region, premiumAmount, _premiumKES);
     }
 
     /**
      * @notice Emit event for backend to send M-Pesa payout
-     * @dev    Called by admin/relay when a claim is detected
      */
     function triggerMpesaPayout(
         address _farmerWallet,
@@ -141,7 +135,7 @@ contract MpesaBridge {
     }
 
     // ── Admin ────────────────────────────────────────────────────────────
-    function setRelayAddress(address _relay) external onlyAdmin {
+    function setRelayAddress(address _relay) external onlyOwner {
         relayAddress = _relay;
     }
 
@@ -177,7 +171,4 @@ contract MpesaBridge {
         }
         return false;
     }
-
-    // Allow receiving ETH
-    receive() external payable {}
 }

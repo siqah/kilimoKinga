@@ -4,8 +4,8 @@ const farmerSchema = new mongoose.Schema({
   walletAddress: { type: String, index: true, unique: true, sparse: true },
   phoneHash:     { type: String, index: true, sparse: true },
   region:        { type: String, required: true, index: true },
-  premiumPaid:   { type: String },  // stored as ETH string
-  coverageAmount:{ type: String },
+  premiumPaid:   { type: Number },  // stored as USDC base units (6 decimals)
+  coverageAmount:{ type: Number },  // stored as USDC base units (6 decimals)
   seasonsCompleted: { type: Number, default: 0 },
   isActive:      { type: Boolean, default: true },
   registrationTx:{ type: String },

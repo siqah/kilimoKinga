@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+
 /**
  * @title IWeatherOracle
  * @notice Interface for weather data oracle (includes NDVI)
@@ -15,36 +21,32 @@ interface IWeatherOracle {
     ) external view returns (uint256 ndvi);
 }
 
+interface IInsurancePool {
+    function payClaim(address _farmer, uint256 _amount) external;
+}
+
 /**
- * @title FarmerInsurance (v3 — Gas Optimized + Upgradeable-Ready)
+ * @title FarmerInsurance (v3 — Stablecoin + UUPS Upgradeable)
  * @notice Decentralized parametric crop insurance with:
- *         1) Custom errors for gas savings
- *         2) Struct packing for storage efficiency
- *         3) Swappable oracle address
- *         4) Multi-season policies with loyalty discounts
- *         5) Tiered payouts (full, partial, none)
- *         6) NDVI-based claims (satellite vegetation data)
- *
- * @dev To upgrade to UUPS Proxy:
- *      1. npm install @openzeppelin/contracts-upgradeable
- *      2. Inherit Initializable, UUPSUpgradeable, OwnableUpgradeable
- *      3. Replace constructor with initialize() + initializer modifier
- *      4. Add _authorizeUpgrade override
+ *         1) Stablecoin standard (USDC) to prevent crypto volatility
+ *         2) UUPS proxy Upgradeability
+ *         3) Custom errors for gas savings
+ *         4) NDVI-based claims (satellite vegetation data)
  */
-contract FarmerInsurance {
+contract FarmerInsurance is Initializable, UUPSUpgradeable, OwnableUpgradeable {
+    using SafeERC20 for IERC20;
+
     // ── Custom Errors ────────────────────────────────────────────────────
-    error OnlyAdmin();
     error AlreadyActive();
     error NotActive();
     error NotRegistered();
     error ClaimAlreadyPaid();
     error RegionNotSupported();
     error InsufficientPremium(uint256 sent, uint256 required);
-    error InsufficientFunds(uint256 available, uint256 required);
     error SeasonNotEnded(uint256 endsAt);
     error ZeroAddress();
 
-    // ── Structs (packed for storage efficiency) ──────────────────────────
+    // ── Structs ──────────────────────────────────────────────────────────
     struct Farmer {
         uint256 premiumPaid;
         uint256 coverageAmount;
@@ -73,8 +75,10 @@ contract FarmerInsurance {
     uint256 public constant LOYALTY_BONUS_SEASONS = 3;
 
     // ── State ────────────────────────────────────────────────────────────
-    address public admin;
     IWeatherOracle public oracle;
+    IERC20 public stablecoin;
+    IInsurancePool public pool;
+    
     uint256 public totalPremiums;
     uint256 public totalClaims;
     uint256 public farmerCount;
@@ -93,29 +97,38 @@ contract FarmerInsurance {
     event NewSeasonStarted(uint256 season);
     event OracleUpdated(address indexed oldOracle, address indexed newOracle);
 
-    // ── Modifiers ────────────────────────────────────────────────────────
-    modifier onlyAdmin() {
-        if (msg.sender != admin) revert OnlyAdmin();
-        _;
+    // ── Upgrades Setup ───────────────────────────────────────────────────
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
-    // ── Constructor ──────────────────────────────────────────────────────
-    constructor(address _oracle) {
-        if (_oracle == address(0)) revert ZeroAddress();
-        admin = msg.sender;
+    function initialize(address _oracle, address _stablecoin, address _pool) public initializer {
+        __Ownable_init(msg.sender);
+
+        if (_oracle == address(0) || _stablecoin == address(0) || _pool == address(0)) revert ZeroAddress();
+        
         oracle = IWeatherOracle(_oracle);
+        stablecoin = IERC20(_stablecoin);
+        pool = IInsurancePool(_pool);
         currentSeason = 1;
     }
 
-    // ── Admin: Swap oracle address ───────────────────────────────────────
-    function setOracle(address _newOracle) external onlyAdmin {
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    // ── Admin: Configuration ─────────────────────────────────────────────
+    function setOracle(address _newOracle) external onlyOwner {
         if (_newOracle == address(0)) revert ZeroAddress();
         address old = address(oracle);
         oracle = IWeatherOracle(_newOracle);
         emit OracleUpdated(old, _newOracle);
     }
 
-    // ── Admin: Configure regional policy ─────────────────────────────────
+    function setPool(address _newPool) external onlyOwner {
+        if (_newPool == address(0)) revert ZeroAddress();
+        pool = IInsurancePool(_newPool);
+    }
+
     function setPolicy(
         string calldata _region,
         uint256 _rainfallThreshold,
@@ -126,7 +139,7 @@ contract FarmerInsurance {
         uint256 _seasonDuration,
         uint256 _partialPayoutPercent,
         uint256 _severeThresholdPercent
-    ) external onlyAdmin {
+    ) external onlyOwner {
         regionalPolicies[_region] = Policy({
             rainfallThreshold: _rainfallThreshold,
             temperatureThreshold: _temperatureThreshold,
@@ -141,21 +154,36 @@ contract FarmerInsurance {
         emit PolicyUpdated(_region, _rainfallThreshold, _temperatureThreshold, _ndviThreshold);
     }
 
-    // ── Farmer: Register for a season ────────────────────────────────────
-    function register(string calldata _region) external payable {
+    // ── Admin: Rescue Funds
+    function withdrawFallbackFund(address to, uint256 amount) external onlyOwner {
+        payable(to).transfer(amount);
+    }
+
+    function withdrawERC20Fallback(address token, address to, uint256 amount) external onlyOwner {
+        IERC20(token).safeTransfer(to, amount);
+    }
+
+    // ── Farmer: Register for a season
+    function register(string calldata _region) external {
+        _registerFor(msg.sender, msg.sender, _region);
+    }
+
+    // ── Admin/Bridge: Register on behalf of a farmer
+    function registerFor(address _farmer, string calldata _region) external {
+        _registerFor(msg.sender, _farmer, _region);
+    }
+
+    function _registerFor(address _payer, address _farmer, string calldata _region) internal {
         Policy memory policy = regionalPolicies[_region];
         if (policy.premiumAmount == 0) revert RegionNotSupported();
 
-        Farmer storage farmer = farmers[msg.sender];
+        Farmer storage farmer = farmers[_farmer];
         if (farmer.active) revert AlreadyActive();
 
         uint256 actualPremium = _calculatePremiumWithDiscount(policy.premiumAmount, farmer.seasonsCompleted);
-        if (msg.value < actualPremium) revert InsufficientPremium(msg.value, actualPremium);
-
-        // Refund excess
-        if (msg.value > actualPremium) {
-            payable(msg.sender).transfer(msg.value - actualPremium);
-        }
+        
+        // Payer must approve FarmerInsurance to spend their stablecoin beforehand
+        stablecoin.safeTransferFrom(_payer, address(this), actualPremium);
 
         uint256 discount = farmer.seasonsCompleted > 0
             ? policy.premiumAmount - actualPremium
@@ -169,22 +197,22 @@ contract FarmerInsurance {
         farmer.active = true;
         farmer.seasonStart = block.timestamp;
 
-        if (!isKnownFarmer[msg.sender]) {
-            isKnownFarmer[msg.sender] = true;
-            farmerAddresses.push(msg.sender);
+        if (!isKnownFarmer[_farmer]) {
+            isKnownFarmer[_farmer] = true;
+            farmerAddresses.push(_farmer);
             farmerCount++;
         }
 
         totalPremiums += actualPremium;
 
-        emit FarmerRegistered(msg.sender, _region, actualPremium, currentSeason);
+        emit FarmerRegistered(_farmer, _region, actualPremium, currentSeason);
         if (discount > 0) {
-            emit SeasonRenewed(msg.sender, currentSeason, discount);
+            emit SeasonRenewed(_farmer, currentSeason, discount);
         }
     }
 
     // ── Admin: Check weather and auto-pay claim ──────────────────────────
-    function checkAndPayClaim(address _farmer) external onlyAdmin {
+    function checkAndPayClaim(address _farmer) external onlyOwner {
         Farmer storage farmer = farmers[_farmer];
         if (!farmer.isRegistered) revert NotRegistered();
         if (!farmer.active) revert NotActive();
@@ -241,14 +269,12 @@ contract FarmerInsurance {
                 claimAmount = (farmer.coverageAmount * policy.partialPayoutPercent) / 100;
             }
 
-            if (address(this).balance < claimAmount) revert InsufficientFunds(address(this).balance, claimAmount);
-
             farmer.claimPaid = claimAmount;
             farmer.active = false;
             farmer.seasonsCompleted++;
             totalClaims += claimAmount;
 
-            payable(_farmer).transfer(claimAmount);
+            pool.payClaim(_farmer, claimAmount);
             emit ClaimPaid(_farmer, claimAmount, reason, severity);
         }
     }
@@ -267,8 +293,7 @@ contract FarmerInsurance {
         farmer.seasonsCompleted++;
     }
 
-    // ── Admin: Advance global season ─────────────────────────────────────
-    function advanceSeason() external onlyAdmin {
+    function advanceSeason() external onlyOwner {
         currentSeason++;
         emit NewSeasonStarted(currentSeason);
     }
@@ -292,10 +317,6 @@ contract FarmerInsurance {
     }
 
     // ── Views ────────────────────────────────────────────────────────────
-    function getContractBalance() public view returns (uint256) {
-        return address(this).balance;
-    }
-
     function getFarmerDetails(
         address _farmer
     )

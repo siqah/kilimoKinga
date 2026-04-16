@@ -1,37 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/**
- * @title IERC20 (minimal interface)
- */
-interface IERC20 {
-    function totalSupply() external view returns (uint256);
-    function balanceOf(address account) external view returns (uint256);
-    function transfer(address to, uint256 value) external returns (bool);
-    function allowance(address owner, address spender) external view returns (uint256);
-    function approve(address spender, uint256 value) external returns (bool);
-    function transferFrom(address from, address to, uint256 value) external returns (bool);
-}
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title InsurancePool (v2 — Gas Optimized + Upgradeable-Ready)
+ * @title InsurancePool (v3 — Stablecoin + UUPS Upgradeable)
  * @notice Investor-backed liquidity pool for the insurance system.
- *         Uses custom errors for gas savings and safe transfer patterns.
- *
- * @dev To upgrade to UUPS Proxy:
- *      1. npm install @openzeppelin/contracts-upgradeable
- *      2. Inherit Initializable, UUPSUpgradeable, OwnableUpgradeable
- *      3. Replace constructor with initialize() + initializer modifier
- *      4. Import and use SafeERC20 from OZ instead of inline _safeTransfer
  */
-contract InsurancePool {
+contract InsurancePool is Initializable, UUPSUpgradeable, OwnableUpgradeable {
+    using SafeERC20 for IERC20;
+
     // ── Custom Errors ────────────────────────────────────────────────────
     error AmountMustBePositive();
     error NoActiveStake();
     error OnlyInsuranceContract();
-    error OnlyAdmin();
     error InsufficientPoolLiquidity(uint256 available, uint256 required);
     error TransferFailed();
+    error ZeroAddress();
 
     // ── Structs ──────────────────────────────────────────────────────────
     struct Stake {
@@ -44,7 +33,6 @@ contract InsurancePool {
     // ── State ────────────────────────────────────────────────────────────
     IERC20 public stablecoin;
     address public insuranceContract;
-    address public admin;
 
     mapping(address => Stake) public stakers;
     address[] public stakerAddresses;
@@ -58,30 +46,35 @@ contract InsurancePool {
     event Unstaked(address indexed investor, uint256 amount, uint256 reward);
     event ClaimFundsUsed(uint256 amount, uint256 remaining);
 
-    // ── Constructor ──────────────────────────────────────────────────────
-    constructor(address _stablecoin, address _insuranceContract) {
+    // ── Upgrades Setup ───────────────────────────────────────────────────
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address _stablecoin, address _insuranceContract) public initializer {
+        __Ownable_init(msg.sender);
+
+        if (_stablecoin == address(0) || _insuranceContract == address(0)) revert ZeroAddress();
+
         stablecoin = IERC20(_stablecoin);
         insuranceContract = _insuranceContract;
-        admin = msg.sender;
         rewardRate = 5; // 5% APY
     }
 
-    // ── Internal: Safe ERC20 transfer ────────────────────────────────────
-    function _safeTransfer(IERC20 token, address to, uint256 amount) internal {
-        bool success = token.transfer(to, amount);
-        if (!success) revert TransferFailed();
-    }
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
-    function _safeTransferFrom(IERC20 token, address from, address to, uint256 amount) internal {
-        bool success = token.transferFrom(from, to, amount);
-        if (!success) revert TransferFailed();
+    // ── Admin ────────────────────────────────────────────────────────────
+    function setInsuranceContract(address _insurance) external onlyOwner {
+        if (_insurance == address(0)) revert ZeroAddress();
+        insuranceContract = _insurance;
     }
 
     // ── Investor: Stake stablecoins ──────────────────────────────────────
     function stake(uint256 _amount) external {
         if (_amount == 0) revert AmountMustBePositive();
 
-        _safeTransferFrom(stablecoin, msg.sender, address(this), _amount);
+        stablecoin.safeTransferFrom(msg.sender, address(this), _amount);
 
         if (stakers[msg.sender].active) {
             uint256 pendingReward = calculateReward(msg.sender);
@@ -108,7 +101,7 @@ contract InsurancePool {
         uint256 balance = stablecoin.balanceOf(address(this));
         if (balance < _amount) revert InsufficientPoolLiquidity(balance, _amount);
 
-        _safeTransfer(stablecoin, _farmer, _amount);
+        stablecoin.safeTransfer(_farmer, _amount);
         totalClaimsPaid += _amount;
 
         emit ClaimFundsUsed(_amount, stablecoin.balanceOf(address(this)));
@@ -128,7 +121,7 @@ contract InsurancePool {
         userStake.active = false;
         totalStaked -= userStake.amount;
 
-        _safeTransfer(stablecoin, msg.sender, totalReturn);
+        stablecoin.safeTransfer(msg.sender, totalReturn);
         emit Unstaked(msg.sender, userStake.amount, reward);
     }
 

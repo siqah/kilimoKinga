@@ -1,10 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import tailwindcss from '@tailwindcss/vite'; // 1. Add this import
 
 export default defineConfig({
   plugins: [
     react(),
+    tailwindcss(), // 2. Add this to the array
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['vite.svg'],
